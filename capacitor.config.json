@@ -1,0 +1,9 @@
+{
+  "appId": "id.astra.belajarbahasa",
+  "appName": "Astra",
+  "webDir": "dist",
+  "backgroundColor": "#F8FAFC",
+  "android": {
+    "allowMixedContent": false
+  }
+}

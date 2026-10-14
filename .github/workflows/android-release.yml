@@ -1,0 +1,87 @@
+name: Android build
+
+# Jalankan manual (Actions -> Android build -> Run workflow) atau dengan memberi tag, mis. v1.0.0.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ASTRA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ASTRA_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ASTRA_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # versionCode harus selalu naik di Play Store; nomor run otomatis naik.
+      ASTRA_VERSION_CODE: ${{ github.run_number }}
+      ASTRA_VERSION_NAME: 1.0.${{ github.run_number }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cek struktur proyek (gagal lebih awal dengan pesan jelas)
+        run: |
+          echo "Isi root repo:"; ls -la
+          missing=0
+          for f in package.json package-lock.json index.html vite.config.js src/main.jsx src/App.jsx capacitor.config.json android/gradlew; do
+            if [ ! -f "$f" ]; then echo "::error::File '$f' tidak ada di root repo"; missing=1; fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "::error::Struktur repo tidak lengkap. Unggah ulang dengan git (lihat PUBLISH.md bagian 1); unggah lewat browser dibatasi ~100 file sekali unggah."
+            echo "Semua file terlacak Git:"; git ls-files | head -200
+            exit 1
+          fi
+          echo "File src terlacak: $(git ls-files src | wc -l) (seharusnya 24)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Pasang dependensi, uji, dan build web
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Sinkronkan ke proyek Android
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Siapkan kunci penandatanganan (jika secret tersedia)
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/astra-upload.jks"
+          echo "ASTRA_KEYSTORE_PATH=$RUNNER_TEMP/astra-upload.jks" >> "$GITHUB_ENV"
+
+      - name: Build AAB rilis bertanda tangan (untuk Play Console)
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease assembleRelease --no-daemon
+
+      - name: Build APK debug (tanpa secret, hanya untuk uji coba di HP)
+        if: env.ANDROID_KEYSTORE_BASE64 == ''
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Unggah hasil build
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-android
+          if-no-files-found: error
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/debug/*.apk
