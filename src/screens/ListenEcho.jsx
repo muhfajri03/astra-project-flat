@@ -11,7 +11,7 @@ const GOOD = "text-slate-astra [text-shadow:0_0_14px_rgba(0,230,153,0.7)]";
 const FIX = "text-slate-astra underline decoration-amber-astra decoration-[3px] underline-offset-[10px]";
 
 export default function ListenEcho({ phrase, ids = [], i = 0 }) {
-  const { state, act, back, replace } = useApp();
+  const { state, act, back, replace } = useApp(); 
   const lang = phrase.lang;
   const slow = state.settings.slow;
 
@@ -26,6 +26,7 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
   const rec = useRef(null);
   const startedAt = useRef(0);
   const toggleMode = useRef(false);
+  const pointerDown = useRef(false);
   const phaseRef = useRef("ready");
   phaseRef.current = phase;
 
@@ -53,17 +54,42 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
       return;
     }
     startedAt.current = Date.now();
-    toggleMode.current = false;
-    setToggled(false);
+        toggleMode.current = !pointerDown.current; // jari sudah lepas (mis. karena dialog izin) → mode ketuk
+    setToggled(!pointerDown.current);
     setPhase("recording");
     rec.current = createRecognizer(lang);
     await rec.current.start();
   };
 
-  const finish = async () => {
+      const finish = async () => {
     if (phaseRef.current !== "recording") return;
+    phaseRef.current = "processing"; // cegah finish() terpanggil dua kali
     setPhase("processing");
-    const text = await rec.current.stop();
+
+    let text = "";
+    try {
+      text = await rec.current.stop();
+    } catch (e) {
+      console.warn("stop() gagal:", e);
+    }
+
+    const why = rec.current?.lastError;
+    if (!text && why === "timeout") {
+      setError("Layanan suara tidak merespons. Pastikan HP online dan app Google (Speech Services) terpasang.");
+    } else if (!text && why) {
+      setError(`Pengenalan suara gagal: ${why}`);
+    }
+
+    const r = scoreAttempt(phrase, text);
+    setResult(r);
+    setFocus(r.words.map((w, idx) => (w.status === "fix" ? idx : -1)).filter((x) => x >= 0));
+    setPhase("result");
+    if (!r.silent) {
+      act((s) => recordPronunciation(s, { phraseId: phrase.id, score: r.score }));
+      if (r.score >= 80) success();
+    }
+  };
+
     const r = scoreAttempt(phrase, text);
     setResult(r);
     setFocus(r.words.map((w, idx) => (w.status === "fix" ? idx : -1)).filter((x) => x >= 0));
@@ -75,6 +101,7 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
   };
 
   const onDown = () => {
+    pointerDown.current = true;
     if (phaseRef.current === "recording" && toggleMode.current) {
       finish();
       return;
@@ -82,6 +109,7 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
     if (phaseRef.current === "ready") begin();
   };
   const onUp = () => {
+    pointerDown.current = false;
     if (phaseRef.current !== "recording") return;
     if (Date.now() - startedAt.current < 450) {
       // ketukan singkat: rekam terus sampai diketuk lagi
@@ -208,7 +236,7 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
               onPointerUp={onUp}
               onPointerCancel={onUp}
               onContextMenu={(e) => e.preventDefault()}
-              className="no-select press relative grid h-24 w-24 place-items-center rounded-full bg-gradient-to-br from-emerald-astra to-emerald-forest text-white shadow-glow disabled:opacity-50"
+              className="no-select touch-none press relative grid h-24 w-24 place-items-center rounded-full bg-gradient-to-br from-emerald-astra to-emerald-forest text-white shadow-glow disabled:opacity-50"
             >
               {phase === "recording" && (
                 <>

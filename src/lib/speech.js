@@ -71,13 +71,16 @@ export async function ensureMicPermission() {
 }
 
 // Sesi rekam satu kali. Pemakaian: const s = createRecognizer(lang); s.start(); ... const text = await s.stop();
+// Setelah stop(), s.lastError berisi alasan kegagalan (mis. "timeout") bila ada.
 export function createRecognizer(lang) {
   const locale = LOCALE[lang] || "en-US";
 
   if (native()) {
-    let finished = null;
-    return {
+    let finished = Promise.resolve("");
+    const api = {
+      lastError: "",
       async start() {
+        api.lastError = "";
         finished = SpeechRecognition.start({
           language: locale,
           maxResults: 3,
@@ -85,7 +88,11 @@ export function createRecognizer(lang) {
           popup: false,
         })
           .then((r) => (r?.matches || []).join(" "))
-          .catch(() => "");
+          .catch((e) => {
+            api.lastError = String(e?.message || e);
+            console.warn("STT error:", api.lastError);
+            return "";
+          });
       },
       async stop() {
         try {
@@ -93,9 +100,19 @@ export function createRecognizer(lang) {
         } catch {
           /* sudah berhenti */
         }
-        return (await finished) || "";
+        const text = await Promise.race([
+          finished,
+          new Promise((resolve) =>
+            setTimeout(() => {
+              if (!api.lastError) api.lastError = "timeout";
+              resolve("");
+            }, 4000)
+          ),
+        ]);
+        return text || "";
       },
     };
+    return api;
   }
 
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -103,6 +120,7 @@ export function createRecognizer(lang) {
   let transcript = "";
   let done;
   return {
+    lastError: "",
     async start() {
       rec = new Rec();
       rec.lang = locale;
