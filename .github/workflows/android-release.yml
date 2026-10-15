@@ -54,7 +54,17 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # Runner ubuntu-latest sudah membawa Android SDK (ANDROID_HOME). Kita tidak memakai
+      # android-actions/setup-android lagi karena ia mencari paket 'tools' yang sudah tidak ada.
+      - name: Siapkan Android SDK bawaan runner
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$SDKM" ]; then echo "::error::sdkmanager tidak ditemukan di $ANDROID_HOME"; exit 1; fi
+          echo "Memakai $SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Siapkan kunci penandatanganan (jika secret tersedia)
         if: env.ANDROID_KEYSTORE_BASE64 != ''
