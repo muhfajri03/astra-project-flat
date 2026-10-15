@@ -11,7 +11,7 @@ const GOOD = "text-slate-astra [text-shadow:0_0_14px_rgba(0,230,153,0.7)]";
 const FIX = "text-slate-astra underline decoration-amber-astra decoration-[3px] underline-offset-[10px]";
 
 export default function ListenEcho({ phrase, ids = [], i = 0 }) {
-  const { state, act, back, replace } = useApp(); 
+  const { state, act, back, replace } = useApp();
   const lang = phrase.lang;
   const slow = state.settings.slow;
 
@@ -54,14 +54,15 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
       return;
     }
     startedAt.current = Date.now();
-        toggleMode.current = !pointerDown.current; // jari sudah lepas (mis. karena dialog izin) → mode ketuk
+    // jika jari sudah lepas (mis. karena dialog izin muncul), langsung masuk mode ketuk
+    toggleMode.current = !pointerDown.current;
     setToggled(!pointerDown.current);
     setPhase("recording");
     rec.current = createRecognizer(lang);
     await rec.current.start();
   };
 
-      const finish = async () => {
+  const finish = async () => {
     if (phaseRef.current !== "recording") return;
     phaseRef.current = "processing"; // cegah finish() terpanggil dua kali
     setPhase("processing");
@@ -79,16 +80,6 @@ export default function ListenEcho({ phrase, ids = [], i = 0 }) {
     } else if (!text && why) {
       setError(`Pengenalan suara gagal: ${why}`);
     }
-
-    const r = scoreAttempt(phrase, text);
-    setResult(r);
-    setFocus(r.words.map((w, idx) => (w.status === "fix" ? idx : -1)).filter((x) => x >= 0));
-    setPhase("result");
-    if (!r.silent) {
-      act((s) => recordPronunciation(s, { phraseId: phrase.id, score: r.score }));
-      if (r.score >= 80) success();
-    }
-  };
 
     const r = scoreAttempt(phrase, text);
     setResult(r);
